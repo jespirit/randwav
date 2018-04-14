@@ -4,17 +4,21 @@
 #include <stdint.h>
 #include <time.h>
 
+#define WAVFILE_SAMPLES_PER_SECOND 44100
+
 int main(int argc, char* argv[])
 {
     int32_t rnd = 0;
     uint32_t i = 0;
     uint32_t seconds = 0;
     uint32_t blocks = 0;
+    uint16_t m = 2;  // Each sample is M bytes long
+    uint16_t nc = 2;  // Number of channels
     uint32_t max_blocks = (UINT32_MAX - 36 - 1) / 4;  // 1,073,741,814.5
-    uint32_t max_seconds = max_blocks / 44100;  // 24,347 seconds
+    uint32_t max_seconds = max_blocks / WAVFILE_SAMPLES_PER_SECOND;  // 24,347 seconds
     uint32_t data32 = 0;
     uint16_t data16 = 0;
-    uint8_t* data = NULL;
+    int16_t* data = NULL;
     FILE* fp;
     const char* default_name = "out.wav";
 
@@ -35,8 +39,8 @@ int main(int argc, char* argv[])
         exit(3);
     }
 
-    blocks = seconds * 44100;
-    data = (uint8_t*)malloc(blocks * 4);
+    blocks = seconds * WAVFILE_SAMPLES_PER_SECOND;
+    data = (int16_t*)malloc(blocks * m * nc);
     if (data == NULL) {
         fprintf(stderr, "Failed to allocate memory for block of size %u\n", blocks);
         exit(4);
@@ -46,7 +50,7 @@ int main(int argc, char* argv[])
 
     if (fp != NULL) {
         fwrite("RIFF", 4, 1, fp);  // Chunk ID
-        data32 = 4 + 24 + 8 + (blocks * 4);
+        data32 = 4 + 24 + 8 + (blocks * m * nc);
         fwrite(&data32, 4, 1, fp);  // Chunk size
         fwrite("WAVE", 4, 1, fp);  // WAVE ID
         // fmt chunk
@@ -55,30 +59,29 @@ int main(int argc, char* argv[])
         fwrite(&data32, 4, 1, fp);  // Chunk size
         data16 = 1;
         fwrite(&data16, 2, 1, fp);  // WAVE_FORMAT_PCM
-        data16 = 2;
+        data16 = nc;
         fwrite(&data16, 2, 1, fp);  // nChannels
-        data32 = 44100;
+        data32 = WAVFILE_SAMPLES_PER_SECOND;
         fwrite(&data32, 4, 1, fp);  // nSamplesPerSec
-        data32 *= 4;
+        data32 = data32 * m * nc;
         fwrite(&data32, 4, 1, fp);  // nAvgBytesPerSec
-        data16 = 4;
+        data16 = m * nc;
         fwrite(&data16, 2, 1, fp);  // nBlockAlign
         data16 = 16;
         fwrite(&data16, 2, 1, fp);  // wBitsPerSample
         // data chunk
         fwrite("data", 4, 1, fp);  // Chunk ID
-        data32 = blocks * 4;
+        data32 = blocks * m * nc;
         fwrite(&data32, 4, 1, fp);
 
         // Write sampled data
         for (i=0; i<blocks; i++) {
             rnd = rand()%65536 - 32768;
-            rnd = (rnd << 16) | rnd;
-            memcpy((void*)(data+i*4), (void*)&rnd, sizeof(int32_t));
-            //memcpy((void*)(data+i*2+2), (void*)&rnd, sizeof(int16_t));
+            data[i*2] = (int16_t)rnd;
+            data[i*2+1] = (int16_t)rnd;
         }
 
-        fwrite(data, blocks*4, 1, fp);
+        fwrite(data, blocks * m * nc, 1, fp);
     }
     else {
         fprintf(stderr, "Failed to write to file %s\n", default_name);
